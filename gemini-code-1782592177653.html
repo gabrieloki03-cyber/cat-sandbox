@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meme Cat Sandbox 2D - Colisões</title>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #111;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; font-family: 'Courier New', Courier, monospace;
+            color: #fff; overflow: hidden; user-select: none;
+        }
+        #gameContainer { position: relative; box-shadow: 0 0 30px rgba(0,0,0,0.8); }
+        canvas { border: 4px solid #333; display: block; background: #000; cursor: crosshair; }
+        
+        /* Menu Inicial */
+        #menuInicial {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #151515; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        #menuInicial h1 { font-size: 32px; color: #00ffcc; margin-bottom: 5px; text-shadow: 3px 3px #000; }
+        #menuInicial p { color: #888; font-size: 14px; margin-bottom: 30px; }
+        .play-btn {
+            background: #00ffcc; color: #000; border: none; padding: 15px 40px;
+            font-size: 20px; font-weight: bold; cursor: pointer; border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 255, 204, 0.4); transition: 0.2s;
+        }
+        .play-btn:hover { transform: scale(1.05); background: #00ccaa; }
+
+        /* Interface Principal da Sandbox */
+        .sidebar {
+            position: absolute; top: 10px; left: 10px; bottom: 10px;
+            width: 160px; background: rgba(20, 20, 20, 0.9);
+            border: 2px solid #444; border-radius: 8px;
+            display: flex; flex-direction: column; gap: 8px; padding: 10px;
+            overflow-y: auto; z-index: 10;
+        }
+        .sidebar h3 { font-size: 11px; margin: 5px 0; color: #00ffcc; text-transform: uppercase; border-bottom: 1px solid #444; }
+        .btn {
+            background: #222; color: #fff; border: 1px solid #555;
+            padding: 6px; font-size: 11px; cursor: pointer; text-align: left;
+            border-radius: 4px; font-weight: bold; transition: 0.1s;
+        }
+        .btn:hover { background: #333; border-color: #00ffcc; }
+        
+        .btn-danger { background: #8b0000; border-color: #ff3333; color: white; }
+        .btn-danger:hover { background: #ff3333; }
+
+        .topbar {
+            position: absolute; top: 10px; left: 190px; right: 10px;
+            background: rgba(20, 20, 20, 0.9); border: 2px solid #444;
+            padding: 8px; border-radius: 8px; display: flex; gap: 10px; align-items: center; z-index: 10;
+        }
+        .topbar span { font-size: 11px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer">
+        <!-- TELA DO MENU INICIAL -->
+        <div id="menuInicial">
+            <h1>MEME CAT SANDBOX</h1>
+            <p>O Jogo do Gato de Óculos Escuros</p>
+            <canvas id="menuCanvas" width="200" height="150" style="border:none; background:transparent;"></canvas>
+            <button class="play-btn" onclick="iniciarJogo()">COMEÇAR JOGO</button>
+        </div>
+
+        <!-- INTERFACE DO JOGO -->
+        <div class="sidebar">
+            <h3>🐾 Animais</h3>
+            <button class="btn" onclick="spawn('gato')">🐱 Gato Meme</button>
+            <button class="btn" onclick="spawn('passaro')">🐦 Pássaro (Voa)</button>
+            <button class="btn" onclick="spawn('cachorro')">🐶 Cão Forte</button>
+            
+            <h3>⚔️ Armas</h3>
+            <button class="btn" onclick="setTool('mao')">🖐️ Arrastar</button>
+            <button class="btn" onclick="setTool('espada')">⚔️ Espada</button>
+            <button class="btn" onclick="setTool('pistola')">🔫 Pistola</button>
+
+            <h3>🚗 Veículos</h3>
+            <button class="btn" onclick="spawn('carrinho')">🛒 Carrinho</button>
+
+            <h3>📦 Acessórios</h3>
+            <button class="btn" onclick="spawn('caixa')">📦 Caixa</button>
+            <button class="btn" onclick="spawn('tv')">📺 TV Velha</button>
+        </div>
+
+        <div class="topbar">
+            <span>🖼️ Cenário:</span>
+            <button class="btn" onclick="setCenario('casa')">🏠 Casa</button>
+            <button class="btn" onclick="setCenario('quintal')">🌳 Quintal</button>
+            <button class="btn" onclick="setCenario('espaco')">🚀 Espaço</button>
+            <button class="btn" onclick="setCenario('deserto')">🌵 Deserto</button>
+            
+            <button class="btn btn-danger" onclick="limparTudo()" style="margin-left: 15px;">🗑️ Limpar Tudo</button>
+            
+            <span style="margin-left: auto; color: #00ffcc;" id="infoTxt">Modo: ARRASTAR</span>
+        </div>
+
+        <canvas id="sandboxCanvas" width="950" height="600"></canvas>
+    </div>
+
+<script>
+const canvas = document.getElementById("sandboxCanvas");
+const ctx = canvas.getContext("2d");
+
+// Configurações Físicas
+let physics = { gravity: 0.6, friction: 0.98, groundY: 530 };
+let cenarioAtual = "casa";
+let ferramentaAtual = "mao";
+let objetos = [];
+let objetoSelecionado = null;
+let chavesTeclado = {};
+let jogoIniciado = false;
+
+window.addEventListener("keydown", (e) => chavesTeclado[e.key] = true);
+window.addEventListener("keyup", (e) => chavesTeclado[e.key] = false);
+
+function iniciarJogo() {
+    document.getElementById("menuInicial").style.display = "none";
+    jogoIniciado = true;
+    limparTudo();
+}
+
+function limparTudo() {
+    objetos = [];
+}
+
+function setCenario(tipo) {
+    cenarioAtual = tipo;
+    physics.gravity = (tipo === "espaco") ? 0.15 : 0.6;
+}
+
+function setTool(tipo) {
+    ferramentaAtual = tipo;
+    document.getElementById("infoTxt").innerText = "Modo: " + tipo.toUpperCase();
+}
+
+// Desenho dos Sprites
+const sprites = {
+    gato: (ctx, x, y, r, morto) => {
+        ctx.fillStyle = morto ? "#555555" : "#ffaa00"; 
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x-r, y-5); ctx.lineTo(x-r, y-r-5); ctx.lineTo(x-5, y-r+5); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x+r, y-5); ctx.lineTo(x+r, y-r-5); ctx.lineTo(x+5, y-r+5); ctx.fill();
+        ctx.fillStyle = morto ? "#111" : "#000";
+        ctx.fillRect(x - 22, y - 8, 18, 10); ctx.fillRect(x + 2, y - 8, 18, 10);
+        ctx.fillRect(x - 22, y - 6, 44, 3);
+    },
+    passaro: (ctx, x, y, r, morto) => {
+        ctx.fillStyle = morto ? "#666" : "#00bfff"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "#ffcc00"; ctx.beginPath(); ctx.moveTo(x+10, y); ctx.lineTo(x+25, y-5); ctx.lineTo(x+10, y+8); ctx.fill();
+        ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(x+2, y-4, 3, 0, Math.PI*2); ctx.fill();
+    },
+    cachorro: (ctx, x, y, r, morto) => {
+        ctx.fillStyle = morto ? "#444" : "#8b5a2b"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = morto ? "#555" : "#ffffcc"; ctx.beginPath(); ctx.arc(x+8, y+5, 8, 0, Math.PI*2); ctx.fill(); 
+        ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(x+2, y-4, 4, 0, Math.PI*2); ctx.arc(x+12, y-4, 4, 0, Math.PI*2); ctx.fill();
+    },
+    caixa: (ctx, x, y, w, h) => {
+        ctx.fillStyle = "#cd853f"; ctx.fillRect(x - w/2, y - h/2, w, h);
+        ctx.strokeStyle = "#8b5a2b"; ctx.lineWidth = 3; ctx.strokeRect(x - w/2, y - h/2, w, h);
+    },
+    tv: (ctx, x, y, w, h) => {
+        ctx.fillStyle = "#444"; ctx.fillRect(x - w/2, y - h/2, w, h);
+        ctx.fillStyle = "#87ceeb"; ctx.fillRect(x - w/2 + 6, y - h/2 + 6, w - 12, h - 12);
+    },
+    carrinho: (ctx, x, y, w, h) => {
+        ctx.fillStyle = "#778899"; ctx.fillRect(x - w/2, y - h/2, w, h);
+    }
+};
+
+// Gato do Menu Inicial
+const mCanvas = document.getElementById("menuCanvas");
+const mCtx = mCanvas.getContext("2d");
+sprites.gato(mCtx, 100, 80, 45, false);
+
+// Classe Física com Caixa de Colisão (Hitbox)
+class ObjetoSandbox {
+    constructor(x, y, tipo, subTipo) {
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0;
+        this.tipo = tipo;
+        this.subTipo = subTipo;
+        this.isDragging = false;
+        this.vida = 100;
+        this.morto = false;
+        this.tempoParaSumir = 60;
+
+        // Definindo formas para a colisão física
+        if (tipo === 'animal') {
+            this.radius = subTipo === 'cachorro' ? 32 : 26;
+            this.w = this.radius * 2; this.h = this.radius * 2;
+        } else if (subTipo === 'carrinho') {
+            this.w = 120; this.h = 20;
+        } else {
+            this.w = 55; this.h = 55;
+        }
+    }
+
+    desenhar() {
+        ctx.save();
+        if (this.tipo === 'animal') {
+            sprites[this.subTipo](ctx, this.x, this.y, this.radius, this.morto);
+        } else {
+            sprites[this.subTipo](ctx, this.x, this.y, this.w, this.h);
+            if (this.subTipo === 'carrinho') {
+                ctx.fillStyle = "#333";
+                ctx.beginPath(); ctx.arc(this.x - 40, this.y + 15, 14, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(this.x + 40, this.y + 15, 14, 0, Math.PI*2); ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+
+    atualizar() {
+        if (this.morto) {
+            this.tempoParaSumir--;
+            this.vy += physics.gravity;
+            this.y += this.vy;
+            if (this.y > physics.groundY - this.h/2) this.y = physics.groundY - this.h/2;
+            return;
+        }
+
+        if (this.isDragging) return;
+
+        // Habilidades especiais passivas
+        if (this.subTipo === 'gato') {
+            if (this.x - this.w/2 <= 175 || this.x + this.w/2 >= canvas.width - 10) {
+                if (this.vy > 0) this.vy = 0.8; // Escala parede deslizando devagar
+            }
+        }
+
+        if (this.subTipo === 'carrinho') {
+            if (chavesTeclado["ArrowRight"]) this.vx += 0.9;
+            if (chavesTeclado["ArrowLeft"]) this.vx -= 0.9;
+        }
+
+        // Gravidade e atrito
+        this.vy += physics.gravity;
+        this.x += this.vx; this.y += this.vy;
+        this.vx *= physics.friction; this.vy *= physics.friction;
+
+        // Limites de Chão e Teto
+        let limiteChao = physics.groundY - this.h/2;
+        if (this.subTipo === 'carrinho') limiteChao -= 14;
+
+        if (this.y > limiteChao) { this.y = limiteChao; this.vy = -this.vy * 0.15; this.vx *= 0.8; }
+
+        // Limites Laterais
+        let limiteEsquerda = 170 + this.w/2;
+        let limiteDireita = canvas.width - this.w/2;
+        if (this.x < limiteEsquerda) { this.x = limiteEsquerda; this.vx = -this.vx * 0.2; }
+        if (this.x > limiteDireita) { this.x = limiteDireita; this.vx = -this.vx * 0.2; }
+    }
+}
+
+// FUNÇÃO DE COLISÃO ENTRE OBJETOS (AABB Rigorosa)
+function gerenciarColisoes() {
+    for (let i = 0; i < objetos.length; i++) {
+        for (let j = i + 1; j < objetos.length; j++) {
+            let o1 = objetos[i];
+            let o2 = objetos[j];
+
+            if (o1.morto || o2.morto || o1.isDragging || o2.isDragging) continue;
+
+            // Calcula as bordas das Hitboxes quadradas/retangulares
+            let b1 = { esq: o1.x - o1.w/2, dir: o1.x + o1.w/2, topo: o1.y - o1.h/2, baixo: o1.y + o1.h/2 };
+            let b2 = { esq: o2.x - o2.w/2, dir: o2.x + o2.w/2, topo: o2.y - o2.h/2, baixo: o2.y + o2.h/2 };
+
+            // Verifica se as caixas se encostam
+            if (b1.dir > b2.esq && b1.esq < b2.dir && b1.baixo > b2.topo && b1.topo < b2.baixo) {
+                
+                // Calcula a profundidade da colisão em cada eixo
+                let overlapX = Math.min(b1.dir - b2.esq, b2.dir - b1.esq);
+                let overlapY = Math.min(b1.baixo - b2.topo, b2.baixo - b1.topo);
+
+                if (overlapX < overlapY) {
+                    // Colisão Lateral (Empurra para os lados)
+                    let direcao = o1.x < o2.x ? -1 : 1;
+                    o1.x += (overlapX / 2) * direcao;
+                    o2.x -= (overlapX / 2) * direcao;
+                    
+                    // Troca de energia elástica (impulso)
+                    let tempVx = o1.vx;
+                    o1.vx = o2.vx * 0.6;
+                    o2.vx = tempVx * 0.6;
+                } else {
+                    // Colisão Vertical (Ficar em cima de coisas / Empilhar)
+                    let direcao = o1.y < o2.y ? -1 : 1;
+                    o1.y += (overlapY / 2) * direcao;
+                    o2.y -= (overlapY / 2) * direcao;
+
+                    if (direcao === -1) {
+                        // o1 pousou em cima de o2
+                        o1.vy = 0;
+                        if (Math.abs(o2.vx) > 0.1) o1.vx = o2.vx; // O boneco acompanha o movimento do veículo/caixa embaixo!
+                    } else {
+                        // o2 pousou em cima de o1
+                        o2.vy = 0;
+                        if (Math.abs(o1.vx) > 0.1) o2.vx = o1.vx;
+                    }
+                }
+            }
+        }
+    }
+}
+
+function spawn(subTipo) {
+    if (!jogoIniciado) return;
+    let tipo = (subTipo === 'gato' || subTipo === 'passaro' || subTipo === 'cachorro') ? 'animal' : (subTipo === 'carrinho' ? 'veiculo' : 'prop');
+    objetos.push(new ObjetoSandbox(450, 150, tipo, subTipo));
+}
+
+function desenharCenarios() {
+    if (cenarioAtual === "casa") {
+        ctx.fillStyle = "#3a2f28"; ctx.fillRect(170, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#221a15"; ctx.fillRect(170, physics.groundY, canvas.width, 70);
+    } else if (cenarioAtual === "quintal") {
+        ctx.fillStyle = "#87ceeb"; ctx.fillRect(170, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#228b22"; ctx.fillRect(170, physics.groundY, canvas.width, 70);
+    } else if (cenarioAtual === "espaco") {
+        ctx.fillStyle = "#050510"; ctx.fillRect(170, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#333344"; ctx.fillRect(170, physics.groundY, canvas.width, 70);
+    } else if (cenarioAtual === "deserto") {
+        ctx.fillStyle = "#f4a460"; ctx.fillRect(170, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#deb887"; ctx.fillRect(170, physics.groundY, canvas.width, 70);
+    }
+}
+
+canvas.addEventListener("mousedown", (e) => {
+    if (!jogoIniciado) return;
+    const rect = canvas.getBoundingClientRect();
+    const mX = e.clientX - rect.left;
+    const mY = e.clientY - rect.top;
+
+    if (mX < 170) return;
+
+    objetos.forEach(obj => {
+        if (obj.morto) return;
+        let colidiu = mX > obj.x - obj.w/2 && mX < obj.x + obj.w/2 && mY > obj.y - obj.h/2 && mY < obj.y + obj.h/2;
+
+        if (colidiu) {
+            if (ferramentaAtual === "mao") {
+                if (obj.subTipo === 'passaro') {
+                    obj.vy = -14; // Pássaro voa com impulso
+                } else {
+                    objetoSelecionado = obj;
+                    obj.isDragging = true;
+                }
+            } 
+            else if (ferramentaAtual === "espada") {
+                obj.vx = (obj.x - mX) * 2.5; obj.vy = -14;
+                if (obj.tipo === 'animal') obj.vida -= 40;
+            }
+        }
+    });
+
+    if (ferramentaAtual === "pistola") {
+        objetos.forEach(obj => {
+            if (obj.morto) return;
+            let dist = Math.hypot(obj.x - mX, obj.y - mY);
+            if (dist < 80) {
+                let angulo = Math.atan2(obj.y - mY, obj.x - mX);
+                obj.vx = Math.cos(angulo) * 22; obj.vy = Math.sin(angulo) * 22;
+                if (obj.tipo === 'animal') obj.vida -= 50;
+            }
+        });
+    }
+});
+
+canvas.addEventListener("mousemove", (e) => {
+    if (ferramentaAtual !== "mao" || !objetoSelecionado) return;
+    const rect = canvas.getBoundingClientRect();
+    objetoSelecionado.x = e.clientX - rect.left;
+    objetoSelecionado.y = e.clientY - rect.top;
+    objetoSelecionado.vx = 0; objetoSelecionado.vy = 0;
+});
+
+canvas.addEventListener("mouseup", () => {
+    if (objetoSelecionado) { objetoSelecionado.isDragging = false; objetoSelecionado = null; }
+});
+
+function loop() {
+    ctx.clearRect(0,0, canvas.width, canvas.height);
+    
+    if (jogoIniciado) {
+        desenharCenarios();
+        
+        // Calcula as colisões entre os objetos antes de renderizar
+        gerenciarColisoes();
+
+        objetos.forEach((obj, index) => {
+            if (obj.vida <= 0 && !obj.morto) obj.morto = true;
+            
+            if (obj.morto && obj.tempoParaSumir <= 0) {
+                objetos.splice(index, 1);
+            } else {
+                obj.atualizar();
+                obj.desenhar();
+            }
+        });
+    }
+
+    ctx.fillStyle = "#222"; ctx.fillRect(0, 0, 170, canvas.height);
+    ctx.fillStyle = "#444"; ctx.fillRect(168, 0, 3, canvas.height);
+
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>
